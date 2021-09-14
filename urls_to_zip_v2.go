@@ -22,65 +22,24 @@ func main() {
 
 	urlFiles := downloadAndParse()
 
-	// Create zip target file
-	archive, err := os.CreateTemp("", ".zip")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Open second file descriptor for seeking and rewinding
-	tmpArc, err := os.Open(archive.Name())
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer os.Remove(archive.Name()) // clean up
-
-	// Make it storage for the new zip writer
-	zw := zip.NewWriter(archive)
-
 	// Create a client to fetch from hither and yon
 	var netClient = &http.Client{
-		Timeout: time.Second * 10,
+		Timeout: time.Second * 120,
 	}
 
-	var startPos, endPos = int64(0), int64(0)
-
 	imageStreamHandler := func(w http.ResponseWriter, req *http.Request) {
+
+		// Create zip writer that writes directly to ResponseWriter
+		zw := zip.NewWriter(w)
 
 		// Iterate over manifest JSON array, downloading and zipping each image file
 		for _, urlFile := range urlFiles {
 
-			startPos, _ = tmpArc.Seek(0, os.SEEK_CUR)
+			// Download one image file, compress and add to archive
 			fetchAndCompress(netClient, zw, urlFile)
-			endPos, _ = tmpArc.Seek(0, os.SEEK_END)
-
-			returnBuf := make([]byte, endPos-startPos)
-			readSize, err := tmpArc.ReadAt(returnBuf, startPos)
-			if err != nil {
-				log.Fatal(err)
-			}
-			println("Readsize from tmparc: ", readSize)
-
-			_, err = w.Write(returnBuf)
-			if err != nil {
-				log.Fatal(err)
-			}
-
 		}
 
-		startPos, _ = tmpArc.Seek(0, os.SEEK_CUR)
-		err = zw.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-		endPos, _ = tmpArc.Seek(0, os.SEEK_END)
-
-		returnBuf := make([]byte, endPos-startPos)
-		_, err := tmpArc.ReadAt(returnBuf, startPos)
-		if err != nil {
-			log.Fatal(err)
-		}
-		_, err = w.Write(returnBuf)
+		err := zw.Close()
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -120,6 +79,9 @@ func fetchAndCompress(netClient *http.Client, zw *zip.Writer, urlFile UrlFile) {
 	}
 	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
 	defer response.Body.Close()
 	response.Body.Close()
 
